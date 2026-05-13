@@ -550,6 +550,8 @@ function setGachaState(s) {
 
   if (s === 1) {
     cumAngle = 0; dragMode = 0;
+    if (cwTimer) { clearTimeout(cwTimer); cwTimer = null; }
+    isRotatingCW = false; gestureOn = false;
     arcEl.setAttribute('stroke-dasharray', '0 ' + ARC_C);
     indicatorEl.style.transform = 'rotate(0deg)';
   }
@@ -571,10 +573,12 @@ const indicatorEl = document.getElementById('ballIndicator');
 const ARC_R = 148;
 const ARC_C = 2 * Math.PI * ARC_R;
 
-let dragging  = false;
-let lastAngle = 0;
-let cumAngle  = 0;
-let dragMode  = 0;
+let dragging     = false;
+let lastAngle    = 0;
+let cumAngle     = 0;
+let dragMode     = 0;
+let isRotatingCW = false;
+let cwTimer      = null;
 
 function ptAngle(cx, cy, x, y) { return Math.atan2(y - cy, x - cx) * 180 / Math.PI; }
 function center() {
@@ -582,22 +586,36 @@ function center() {
   return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
 }
 
-/* cumAngle への時計回り加算とUI/コマンド更新（ドラッグ・ジェスチャー共通） */
-function applyRotation(delta) {
-  cumAngle += delta;
+function updateRotationVisuals() {
   indicatorEl.style.transform = 'rotate(' + cumAngle + 'deg)';
   const shown = Math.min(cumAngle, 720);
   arcEl.setAttribute('stroke-dasharray', (ARC_C * shown / 360).toFixed(1) + ' ' + ARC_C);
   const t = Math.min(cumAngle / 720, 1);
   arcEl.setAttribute('stroke', `hsl(${50 - t * 30},100%,55%)`);
-  rotCountEl.textContent = (cumAngle / 360).toFixed(1) + ' 周';
-  const newMode = cumAngle >= 720 ? 2 : (cumAngle > 5 ? 1 : 0);
-  if (newMode !== dragMode) {
-    dragMode = newMode;
-    if (newMode === 1) sendCmd('#BFGCPRE!');
-    else if (newMode === 2) sendCmd('#BFGCMOVE!');
+  rotCountEl.textContent = cumAngle > 0 ? (cumAngle / 360).toFixed(1) + ' 周' : '';
+}
+
+/* ドラッグ(isRotatingCW) またはジェスチャー(gestureOn) どちらかがアクティブならPRE/MOVE */
+function updateMode() {
+  const targetMode = (isRotatingCW || gestureOn)
+    ? (cumAngle >= 720 ? 2 : (cumAngle > 5 ? 1 : 0))
+    : 0;
+  if (targetMode !== dragMode) {
+    dragMode = targetMode;
+    if (targetMode === 1) sendCmd('#BFGCPRE!');
+    else if (targetMode === 2) sendCmd('#BFGCMOVE!');
     else sendCmd('#BFGCSTOP!');
   }
+}
+
+function startCwTimer() {
+  if (cwTimer) clearTimeout(cwTimer);
+  isRotatingCW = true;
+  cwTimer = setTimeout(() => {
+    isRotatingCW = false;
+    cwTimer = null;
+    if (dragging) updateMode();
+  }, 500);
 }
 
 function dragStart(x, y) {
@@ -606,19 +624,7 @@ function dragStart(x, y) {
   const c   = center();
   lastAngle = ptAngle(c.x, c.y, x, y);
   dragRingEl.classList.add('active');
-  const initMode = cumAngle >= 720 ? 2 : (cumAngle > 5 ? 1 : 0);
-  if (initMode !== dragMode) {
-    dragMode = initMode;
-    if (initMode === 1) sendCmd('#BFGCPRE!');
-    else if (initMode === 2) sendCmd('#BFGCMOVE!');
-  }
-  indicatorEl.style.transform = 'rotate(' + cumAngle + 'deg)';
-  if (cumAngle > 0) {
-    const shown = Math.min(cumAngle, 720);
-    arcEl.setAttribute('stroke-dasharray', (ARC_C * shown / 360).toFixed(1) + ' ' + ARC_C);
-    const t = Math.min(cumAngle / 720, 1);
-    arcEl.setAttribute('stroke', `hsl(${50 - t * 30},100%,55%)`);
-  }
+  updateRotationVisuals();
 }
 
 function dragMove(x, y) {
@@ -628,7 +634,12 @@ function dragMove(x, y) {
   let delta   = angle - lastAngle;
   if (delta >  180) delta -= 360;
   if (delta < -180) delta += 360;
-  if (delta > 0) applyRotation(delta);
+  if (delta > 0) {
+    cumAngle += delta;
+    updateRotationVisuals();
+    startCwTimer();
+  }
+  updateMode();
   lastAngle = angle;
 }
 
@@ -637,7 +648,9 @@ function dragEnd() {
   dragging = false;
   dragRingEl.classList.remove('active');
   rotCountEl.textContent = '';
-  if (dragMode > 0) { sendCmd('#BFGCSTOP!'); dragMode = 0; }
+  if (cwTimer) { clearTimeout(cwTimer); cwTimer = null; }
+  isRotatingCW = false;
+  if (dragMode > 0 && !gestureOn) { sendCmd('#BFGCSTOP!'); dragMode = 0; }
 }
 
 document.addEventListener('mousedown',  e => { if (e.target.closest('button')) return; e.preventDefault(); dragStart(e.clientX, e.clientY); });
@@ -707,8 +720,7 @@ function stopCamera() {
   if (gestureOn) {
     gestureOn = false;
     dragRingEl.classList.remove('active');
-    rotCountEl.textContent = '';
-    if (dragMode > 0) { sendCmd('#BFGCSTOP!'); dragMode = 0; }
+    updateMode();
   }
 }
 
@@ -733,9 +745,8 @@ function onHandResults(res) {
     if (gestureOn) {
       gestureOn = false;
       dragRingEl.classList.remove('active');
-      rotCountEl.textContent = '';
       prevHAngle = null; hAngleBuf = [];
-      if (dragMode > 0) { sendCmd('#BFGCSTOP!'); dragMode = 0; }
+      updateMode();
     }
     return;
   }
@@ -762,7 +773,9 @@ function onHandResults(res) {
         gestureOn = true;
         dragRingEl.classList.add('active');
       }
-      applyRotation(delta);
+      cumAngle += delta;
+      updateRotationVisuals();
+      updateMode();
     }
   }
   prevHAngle = smooth;

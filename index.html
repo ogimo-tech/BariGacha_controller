@@ -542,6 +542,8 @@ function setGachaState(s) {
   // LOCK受信時: 積算角度をリセット
   if (s === 1) {
     cumAngle = 0; dragMode = 0;
+    if (cwTimer) { clearTimeout(cwTimer); cwTimer = null; }
+    isRotatingCW = false;
     arcEl.setAttribute('stroke-dasharray', '0 ' + ARC_C);
     indicatorEl.style.transform = 'rotate(0deg)';
   }
@@ -563,15 +565,48 @@ const indicatorEl = document.getElementById('ballIndicator');
 const ARC_R = 148;
 const ARC_C = 2 * Math.PI * ARC_R;
 
-let dragging  = false;
-let lastAngle = 0;
-let cumAngle  = 0;
-let dragMode  = 0;
+let dragging     = false;
+let lastAngle    = 0;
+let cumAngle     = 0;
+let dragMode     = 0;
+let isRotatingCW = false;
+let cwTimer      = null;
 
 function ptAngle(cx, cy, x, y) { return Math.atan2(y - cy, x - cx) * 180 / Math.PI; }
 function center() {
   const r = wheelWrap.getBoundingClientRect();
   return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+}
+
+function updateRotationVisuals() {
+  indicatorEl.style.transform = 'rotate(' + cumAngle + 'deg)';
+  const shown = Math.min(cumAngle, 720);
+  arcEl.setAttribute('stroke-dasharray', (ARC_C * shown / 360).toFixed(1) + ' ' + ARC_C);
+  const t = Math.min(cumAngle / 720, 1);
+  arcEl.setAttribute('stroke', `hsl(${50 - t * 30},100%,55%)`);
+  rotCountEl.textContent = cumAngle > 0 ? (cumAngle / 360).toFixed(1) + ' 周' : '';
+}
+
+function updateMode() {
+  const targetMode = isRotatingCW
+    ? (cumAngle >= 720 ? 2 : (cumAngle > 5 ? 1 : 0))
+    : 0;
+  if (targetMode !== dragMode) {
+    dragMode = targetMode;
+    if (targetMode === 1) sendCmd('#BFGCPRE!');
+    else if (targetMode === 2) sendCmd('#BFGCMOVE!');
+    else sendCmd('#BFGCSTOP!');
+  }
+}
+
+function startCwTimer() {
+  if (cwTimer) clearTimeout(cwTimer);
+  isRotatingCW = true;
+  cwTimer = setTimeout(() => {
+    isRotatingCW = false;
+    cwTimer = null;
+    if (dragging) updateMode();
+  }, 500);
 }
 
 function dragStart(x, y) {
@@ -580,19 +615,7 @@ function dragStart(x, y) {
   const c   = center();
   lastAngle = ptAngle(c.x, c.y, x, y);
   dragRingEl.classList.add('active');
-  const initMode = cumAngle >= 720 ? 2 : (cumAngle > 5 ? 1 : 0);
-  if (initMode !== dragMode) {
-    dragMode = initMode;
-    if (initMode === 1) sendCmd('#BFGCPRE!');
-    else if (initMode === 2) sendCmd('#BFGCMOVE!');
-  }
-  indicatorEl.style.transform = 'rotate(' + cumAngle + 'deg)';
-  if (cumAngle > 0) {
-    const shown = Math.min(cumAngle, 720);
-    arcEl.setAttribute('stroke-dasharray', (ARC_C * shown / 360).toFixed(1) + ' ' + ARC_C);
-    const t = Math.min(cumAngle / 720, 1);
-    arcEl.setAttribute('stroke', `hsl(${50 - t * 30},100%,55%)`);
-  }
+  updateRotationVisuals();
 }
 
 function dragMove(x, y) {
@@ -602,26 +625,13 @@ function dragMove(x, y) {
   let delta   = angle - lastAngle;
   if (delta >  180) delta -= 360;
   if (delta < -180) delta += 360;
-  if (delta > 0) cumAngle += delta;
-  lastAngle = angle;
-
-  indicatorEl.style.transform = 'rotate(' + cumAngle + 'deg)';
-
-  const shown = Math.min(cumAngle, 720);
-  arcEl.setAttribute('stroke-dasharray', (ARC_C * shown / 360).toFixed(1) + ' ' + ARC_C);
-  const t = Math.min(cumAngle / 720, 1);
-  arcEl.setAttribute('stroke', `hsl(${50 - t * 30},100%,55%)`);
-
-  const rot = cumAngle / 360;
-  rotCountEl.textContent = rot > 0 ? rot.toFixed(1) + ' 周' : '';
-
-  const newMode = cumAngle >= 720 ? 2 : (cumAngle > 5 ? 1 : 0);
-  if (newMode !== dragMode) {
-    dragMode = newMode;
-    if (newMode === 1) sendCmd('#BFGCPRE!');
-    else if (newMode === 2) sendCmd('#BFGCMOVE!');
-    else sendCmd('#BFGCSTOP!');
+  if (delta > 0) {
+    cumAngle += delta;
+    updateRotationVisuals();
+    startCwTimer();
   }
+  updateMode();
+  lastAngle = angle;
 }
 
 function dragEnd() {
@@ -629,6 +639,8 @@ function dragEnd() {
   dragging = false;
   dragRingEl.classList.remove('active');
   rotCountEl.textContent = '';
+  if (cwTimer) { clearTimeout(cwTimer); cwTimer = null; }
+  isRotatingCW = false;
   if (dragMode > 0) { sendCmd('#BFGCSTOP!'); dragMode = 0; }
 }
 
