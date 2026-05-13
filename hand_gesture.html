@@ -781,8 +781,8 @@ function onHandResults(res) {
       if (cwMaintainTimer) clearTimeout(cwMaintainTimer);
       cwMaintainTimer = setTimeout(resetGestureState, 1000);
 
-      /* 1秒以上 CW 継続で起動 */
-      if (!gestureOn && (now - cwActivationStart) >= 1000) {
+      /* 0.5秒以上 CW 継続で起動 */
+      if (!gestureOn && (now - cwActivationStart) >= 500) {
         gestureOn = true;
         dragRingEl.classList.add('active');
       }
