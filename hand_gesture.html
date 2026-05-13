@@ -763,25 +763,19 @@ function onHandResults(res) {
   const lms = res.multiHandLandmarks[0];
   drawHandSkeleton(ctx, lms, pip.width, pip.height);
 
-  if (curState < 2) { prevTipAngle = null; tipAngleBuf = []; return; }
+  if (curState < 2) { prevTipAngle = null; return; }
 
-  /* 手首(0)→人差し指先端(8) ベクトル角。x 反転でミラー補正。
-     手首基準なので手の位置に依存せず安定 */
-  const wx  = 1 - lms[0].x, wy = lms[0].y;
+  /* 人差し指先端(8)の画面中心からの角度。x 反転でミラー補正。
+     画面中心基準なので手全体の円運動を正しく360°積算できる */
   const ix  = 1 - lms[8].x, iy = lms[8].y;
-  const raw = Math.atan2(iy - wy, ix - wx) * 180 / Math.PI;
-
-  /* 5フレーム移動平均でジッターを除去 */
-  tipAngleBuf.push(raw);
-  if (tipAngleBuf.length > 5) tipAngleBuf.shift();
-  const tip = tipAngleBuf.reduce((a, b) => a + b, 0) / tipAngleBuf.length;
+  const tip = Math.atan2(iy - 0.5, ix - 0.5) * 180 / Math.PI;
 
   if (prevTipAngle !== null) {
     let delta = tip - prevTipAngle;
     if (delta >  180) delta -= 360;
     if (delta < -180) delta += 360;
 
-    if (delta > 0 && delta < 25) {
+    if (delta > 0 && delta < 60) {
       /* 時計回りフレーム */
       cwLastSeen = now;
       if (cwActivationStart === null) cwActivationStart = now;
