@@ -484,6 +484,7 @@ function setConnected(ok) {
     st.className   = 'connected';
     enable(ctl); enable(cmd);
     setGachaState(1);
+    if (!cameraOn) startCamera();
   } else {
     st.textContent = '未接続';
     st.className   = '';
