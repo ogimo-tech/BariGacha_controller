@@ -20,7 +20,7 @@
   --gold2: #b09030;
   --gold3: #604808;
   --text:  #fffde8;
-  --text2: #88aaff;
+  --text2: #ffffff;
   --dim:   rgba(255,253,200,.5);
   --green: #44ee44;
   --red:   #ee3333;
@@ -76,7 +76,7 @@ body::before {
 .game-title h1 {
   font-size: .95rem;
   color: var(--gold);
-  text-shadow: 2px 2px 0 var(--gold3), 0 0 20px rgba(232,192,96,.8), 0 0 50px rgba(232,192,96,.3);
+  text-shadow: 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 0 0 20px rgba(232,192,96,.9), 0 0 50px rgba(232,192,96,.4);
   letter-spacing: .07em; line-height: 1.4;
 }
 .game-title .sub {
@@ -165,6 +165,7 @@ button:disabled { opacity: .35; cursor: not-allowed; transform: none !important;
   display: flex;
   flex-direction: column;
   min-height: 0;
+  background: rgba(20, 80, 160, 0.45);
   margin-bottom: 0;
   margin-left: -6px;
   margin-right: -6px;
@@ -946,12 +947,12 @@ function initStars() {
 function drawStars() {
   starCtx.clearRect(0, 0, starCanvas.width, starCanvas.height);
   const grad = starCtx.createLinearGradient(0, 0, 0, starCanvas.height);
-  grad.addColorStop(0, '#050510'); grad.addColorStop(.5, '#080820'); grad.addColorStop(1, '#050518');
+  grad.addColorStop(0, '#5599cc'); grad.addColorStop(.5, '#2d6fa8'); grad.addColorStop(1, '#1a4d88');
   starCtx.fillStyle = grad; starCtx.fillRect(0, 0, starCanvas.width, starCanvas.height);
   stars.forEach(s => {
     s.a += s.da; if (s.a>1||s.a<0) s.da *= -1;
     starCtx.beginPath(); starCtx.arc(s.x, s.y, s.r, 0, Math.PI*2);
-    starCtx.fillStyle = s.r>1 ? `rgba(200,210,255,${s.a.toFixed(2)})` : `rgba(255,255,255,${s.a.toFixed(2)})`;
+    starCtx.fillStyle = s.r>1 ? `rgba(255,255,255,${(s.a*.6).toFixed(2)})` : `rgba(255,255,255,${(s.a*.4).toFixed(2)})`;
     starCtx.fill();
   });
   requestAnimationFrame(drawStars);
