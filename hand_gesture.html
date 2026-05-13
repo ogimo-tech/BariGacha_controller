@@ -551,7 +551,9 @@ function setGachaState(s) {
   if (s === 1) {
     cumAngle = 0; dragMode = 0;
     if (cwTimer) { clearTimeout(cwTimer); cwTimer = null; }
-    isRotatingCW = false; gestureOn = false;
+    isRotatingCW = false;
+    if (cwMaintainTimer) { clearTimeout(cwMaintainTimer); cwMaintainTimer = null; }
+    cwActivationStart = null; cwLastSeen = null; gestureOn = false;
     arcEl.setAttribute('stroke-dasharray', '0 ' + ARC_C);
     indicatorEl.style.transform = 'rotate(0deg)';
   }
@@ -663,12 +665,14 @@ window.addEventListener('touchend',     () => dragEnd());
 /* ============================================================
    カメラ / MediaPipe Hands ジェスチャー
    ============================================================ */
-let mpHands     = null;
-let cameraUtil  = null;
-let cameraOn    = false;
-let gestureOn   = false;
-let prevHAngle  = null;
-let hAngleBuf   = [];
+let mpHands          = null;
+let cameraUtil       = null;
+let cameraOn         = false;
+let gestureOn        = false;
+let prevTipAngle     = null;
+let cwActivationStart = null;
+let cwLastSeen       = null;
+let cwMaintainTimer  = null;
 
 async function toggleCamera() {
   cameraOn ? stopCamera() : await startCamera();
@@ -715,20 +719,19 @@ function stopCamera() {
   btn.textContent = '📷 カメラ';
   btn.classList.remove('cam-on');
   cameraOn = false;
-  prevHAngle = null;
-  hAngleBuf  = [];
+  resetGestureState();
+}
+
+function resetGestureState() {
+  if (cwMaintainTimer) { clearTimeout(cwMaintainTimer); cwMaintainTimer = null; }
+  cwActivationStart = null;
+  cwLastSeen        = null;
+  prevTipAngle      = null;
   if (gestureOn) {
     gestureOn = false;
     dragRingEl.classList.remove('active');
     updateMode();
   }
-}
-
-/* 手首(0)→中指MCP(9) のベクトル角。x を反転してミラー表示と合わせる */
-function calcHandAngle(lms) {
-  const wx = 1 - lms[0].x, wy = lms[0].y;
-  const mx = 1 - lms[9].x, my = lms[9].y;
-  return Math.atan2(my - wy, mx - wx) * 180 / Math.PI;
 }
 
 function onHandResults(res) {
@@ -740,14 +743,16 @@ function onHandResults(res) {
   pip.height = vid.videoHeight || 240;
   ctx.clearRect(0, 0, pip.width, pip.height);
 
+  const now = Date.now();
+
+  /* 300ms 以上 CW が途切れていたら起動フェーズをリセット */
+  if (cwActivationStart !== null && cwLastSeen !== null && (now - cwLastSeen) > 300) {
+    cwActivationStart = null;
+  }
+
   if (!res.multiHandLandmarks || res.multiHandLandmarks.length === 0) {
     status.textContent = '🔍 検出中...';
-    if (gestureOn) {
-      gestureOn = false;
-      dragRingEl.classList.remove('active');
-      prevHAngle = null; hAngleBuf = [];
-      updateMode();
-    }
+    resetGestureState();
     return;
   }
 
@@ -755,30 +760,41 @@ function onHandResults(res) {
   const lms = res.multiHandLandmarks[0];
   drawHandSkeleton(ctx, lms, pip.width, pip.height);
 
-  if (curState < 2) { prevHAngle = null; return; }
+  if (curState < 2) { prevTipAngle = null; return; }
 
-  /* 3フレーム移動平均でスムージング */
-  const raw = calcHandAngle(lms);
-  hAngleBuf.push(raw);
-  if (hAngleBuf.length > 3) hAngleBuf.shift();
-  const smooth = hAngleBuf.reduce((a, b) => a + b, 0) / hAngleBuf.length;
+  /* 人差し指先端(8) のカメラ中央周回角度。x 反転でミラー補正 */
+  const fx  = 1 - lms[8].x;
+  const fy  = lms[8].y;
+  const tip = Math.atan2(fy - 0.5, fx - 0.5) * 180 / Math.PI;
 
-  if (prevHAngle !== null) {
-    let delta = smooth - prevHAngle;
+  if (prevTipAngle !== null) {
+    let delta = tip - prevTipAngle;
     if (delta >  180) delta -= 360;
     if (delta < -180) delta += 360;
-    /* 時計回りのみ・25°/frame 超はノイズ除去 */
+
     if (delta > 0 && delta < 25) {
-      if (!gestureOn) {
+      /* 時計回りフレーム */
+      cwLastSeen = now;
+      if (cwActivationStart === null) cwActivationStart = now;
+
+      /* 1秒維持タイマーをリセット（これが切れたら STOP） */
+      if (cwMaintainTimer) clearTimeout(cwMaintainTimer);
+      cwMaintainTimer = setTimeout(resetGestureState, 1000);
+
+      /* cumAngle 積算＋ビジュアル更新 */
+      cumAngle += delta;
+      updateRotationVisuals();
+
+      /* 1秒以上 CW 継続で起動 */
+      if (!gestureOn && (now - cwActivationStart) >= 1000) {
         gestureOn = true;
         dragRingEl.classList.add('active');
       }
-      cumAngle += delta;
-      updateRotationVisuals();
-      updateMode();
+
+      if (gestureOn) updateMode();
     }
   }
-  prevHAngle = smooth;
+  prevTipAngle = tip;
 }
 
 const HAND_CONN = [
@@ -800,11 +816,15 @@ function drawHandSkeleton(ctx, lms, w, h) {
     ctx.stroke();
   });
   lms.forEach((lm, i) => {
-    const isKey = i === 0 || i === 9;
+    const r = i === 8 ? 7 : (i === 0 ? 4 : 2.5);
     ctx.beginPath();
-    ctx.arc(lm.x * w, lm.y * h, isKey ? 5 : 2.5, 0, Math.PI * 2);
-    ctx.fillStyle = i === 0 ? '#ff6060' : i === 9 ? '#60ee60' : 'rgba(232,192,96,.85)';
+    ctx.arc(lm.x * w, lm.y * h, r, 0, Math.PI * 2);
+    ctx.fillStyle = i === 8 ? '#ffee00' : i === 0 ? '#ff6060' : 'rgba(232,192,96,.85)';
     ctx.fill();
+    if (i === 8) {
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
   });
 }
 
