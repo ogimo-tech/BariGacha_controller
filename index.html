@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>魔法のバリフリガチャ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:    #050510;
+  --win:   #08082a;
+  --win2:  #0c0c38;
+  --gold:  #e8c060;
+  --gold2: #b09030;
+  --gold3: #604808;
+  --text:  #fffde8;
+  --text2: #88aaff;
+  --dim:   rgba(255,253,200,.5);
+  --green: #44ee44;
+  --red:   #ee3333;
+}
+
+/* ============================================================
+   ベースレイアウト（ToMonoTe と同じ哲学: 100dvh flex column）
+   ============================================================ */
+body {
+  font-family: 'DotGothic16', monospace;
+  background: var(--bg);
+  color: var(--text);
+  max-width: 480px;
+  margin: 0 auto;
+  /* ↓ これが全幅・全高フィットの核心 */
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+
+/* ドット絵グリッドオーバーレイ */
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background-image:
+    linear-gradient(rgba(255,255,255,.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.018) 1px, transparent 1px);
+  background-size: 16px 16px;
+  pointer-events: none; z-index: 0;
+}
+
+#starCanvas, #fxCanvas {
+  position: fixed; top: 0; left: 0;
+  width: 100%; height: 100%;
+  pointer-events: none;
+}
+#starCanvas { z-index: 0; }
+#fxCanvas   { z-index: 200; }
+
+/* コンテナも flex column で残り高さを占有 */
+.container {
+  position: relative; z-index: 1;
+  padding: 6px 6px 4px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  gap: 0;
+}
+
+/* ============================================================
+   タイトル（flex-shrink: 0 = 高さ固定）
+   ============================================================ */
+.game-title {
+  flex-shrink: 0;
+  text-align: center;
+  padding: 8px 0 6px;
+}
+.game-title h1 {
+  font-size: .95rem;
+  color: var(--gold);
+  text-shadow: 2px 2px 0 var(--gold3), 0 0 20px rgba(232,192,96,.8), 0 0 50px rgba(232,192,96,.3);
+  letter-spacing: .07em; line-height: 1.4;
+}
+.game-title .sub {
+  font-size: .58rem; color: var(--text2);
+  margin-top: 3px; letter-spacing: .2em; opacity: .8;
+}
+
+/* ============================================================
+   RPG ウィンドウ枠
+   ============================================================ */
+.rpg-win {
+  background: var(--win);
+  border: 3px solid var(--gold);
+  box-shadow: 0 0 0 2px var(--win), 0 0 0 4px var(--gold2), 5px 5px 0 rgba(0,0,0,.85);
+  padding: 10px 12px;
+  margin-bottom: 6px;
+}
+.rpg-win-hdr {
+  font-size: .64rem; color: var(--gold);
+  letter-spacing: .15em;
+  border-bottom: 1px solid var(--gold2);
+  padding-bottom: 5px; margin-bottom: 8px;
+}
+.rpg-win-hdr::before { content: '▼ '; }
+
+/* ============================================================
+   上段: GACHA STATUS + COMMAND 横並び（flex-shrink: 0）
+   ============================================================ */
+.top-row {
+  flex-shrink: 0;
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  margin-bottom: 6px;
+}
+.top-row .rpg-win {
+  flex: 1; min-width: 0; margin-bottom: 0;
+}
+
+/* ============================================================
+   接続ステータス
+   ============================================================ */
+#statusText {
+  font-size: .72rem; font-weight: bold;
+  color: var(--red); margin-bottom: 8px; line-height: 1.5;
+}
+#statusText::before { content: '◆ '; }
+#statusText.connected { color: var(--green); }
+
+/* ============================================================
+   RPG ボタン
+   ============================================================ */
+.rpg-btn {
+  font-family: 'DotGothic16', monospace;
+  background: var(--win2); color: var(--text);
+  border: 2px solid var(--gold2);
+  padding: 8px 12px; cursor: pointer;
+  box-shadow: 3px 3px 0 var(--gold3);
+  transition: transform .08s, box-shadow .08s, background .08s;
+  font-size: .76rem; letter-spacing: .04em;
+  display: inline-flex; align-items: center; gap: 5px;
+}
+.rpg-btn:hover  { background: #14145a; box-shadow: 1px 1px 0 var(--gold3); transform: translate(2px,2px); }
+.rpg-btn:active { transform: translate(3px,3px); box-shadow: none; }
+.rpg-btn-primary {
+  border-color: var(--gold); color: var(--gold);
+  box-shadow: 4px 4px 0 var(--gold3); width: 100%; justify-content: center;
+  font-size: .78rem;
+}
+.rpg-btn-primary:hover { background: #1a1a55; box-shadow: 2px 2px 0 var(--gold3); }
+.rpg-btn.danger { border-color: #993333; box-shadow: 3px 3px 0 #441111; color: #ffaaaa; }
+.rpg-btn.danger:hover { background: #3a0a0a; box-shadow: 1px 1px 0 #441111; }
+button:disabled { opacity: .35; cursor: not-allowed; transform: none !important; }
+
+.cmd-col { display: flex; flex-direction: column; gap: 6px; }
+.cmd-col .rpg-btn { width: 100%; justify-content: center; }
+
+/* ============================================================
+   コントロール: MAGIC ORB エリア（flex: 1 = 残り高さすべて占有）
+   ============================================================ */
+#controls {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  transition: opacity .3s;
+}
+
+/* MAGIC ORB ウィンドウ（flex: 1 = controls を満たす） */
+.orb-win {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  margin-bottom: 0;
+  /* 横方向はコンテナ端まで広げる */
+  margin-left: -6px;
+  margin-right: -6px;
+  padding-left: 4px;
+  padding-right: 4px;
+}
+
+/* gacha-area: flex: 1 + container-type: size でサイズを提供 */
+.gacha-area {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  /* Container Queries のサイズ基準 */
+  container-type: size;
+}
+
+/* ============================================================
+   ホイール: Container Queries で縦横どちらにもフィット
+   ============================================================ */
+.wheel-wrap {
+  position: relative;
+  /* min(コンテナ幅, コンテナ高さ) で正方形 → ToMonoTe と同じ追従挙動 */
+  width:  min(100cqw, 100cqh);
+  height: min(100cqw, 100cqh);
+  max-width: 460px;
+  max-height: 460px;
+  cursor: grab; user-select: none; touch-action: none;
+  flex-shrink: 0;
+}
+.wheel-wrap:active { cursor: grabbing; }
+
+/* SVGプログレスリング */
+.progress-svg {
+  position: absolute; top: -18px; left: -18px;
+  width: calc(100% + 36px); height: calc(100% + 36px);
+  pointer-events: none;
+}
+
+/* ガチャ球 */
+.gacha-ball {
+  position: absolute; inset: 0;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  flex-direction: column;
+  transition: background .4s, box-shadow .4s;
+}
+
+/* RPG 状態別スタイル */
+.s-disconnect { background: radial-gradient(circle at 35% 30%, #1c1c4a, #060614); box-shadow: 0 0 30px rgba(0,0,80,.9); }
+.s-lock       { background: radial-gradient(circle at 35% 30%, #7a1010, #2a0404); box-shadow: 0 0 55px rgba(180,20,20,.8), 0 0 100px rgba(180,0,0,.3); }
+.s-unlock     { background: radial-gradient(circle at 35% 30%, #102870, #040c30); box-shadow: 0 0 65px rgba(30,90,230,.9), 0 0 110px rgba(30,70,230,.4); animation: pulseBlue 2s ease-in-out infinite; }
+.s-premove    { background: radial-gradient(circle at 35% 30%, #806000, #2a1c00); box-shadow: 0 0 70px rgba(220,160,20,1), 0 0 120px rgba(220,140,0,.5); }
+.s-get        { background: radial-gradient(circle at 35% 30%, #c0900a, #402800); box-shadow: 0 0 95px rgba(255,215,0,1), 0 0 160px rgba(255,150,0,.9); animation: getPulse .25s ease-in-out infinite; }
+
+@keyframes pulseBlue { 0%,100%{box-shadow:0 0 65px rgba(30,90,230,.8),0 0 110px rgba(30,70,230,.4)} 50%{box-shadow:0 0 95px rgba(50,120,255,1),0 0 150px rgba(50,100,255,.6)} }
+@keyframes getPulse  { 0%,100%{transform:scale(1)} 50%{transform:scale(1.05)} }
+.spin-slow { animation: spinA 1.6s linear infinite !important; }
+.spin-fast { animation: spinA .4s  linear infinite !important; }
+@keyframes spinA { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+
+/* 球内テキスト */
+.ball-inner { text-align: center; pointer-events: none; }
+.ball-icon  { font-size: 3.8rem; display: block; line-height: 1; filter: drop-shadow(0 0 10px rgba(255,255,255,.5)); }
+.ball-label { font-size: .85rem; font-weight: bold; color: var(--text); margin-top: 8px; letter-spacing: .12em; text-shadow: 2px 2px 0 rgba(0,0,0,.9); }
+.ball-hint  { font-size: .62rem; color: var(--dim); margin-top: 4px; }
+
+/* ドラッグリング */
+.drag-ring {
+  position: absolute; inset: -8px; border-radius: 50%;
+  border: 2px dashed rgba(232,192,96,.2);
+  pointer-events: none; transition: border-color .2s, border-style .2s;
+}
+.drag-ring.active { border-color: rgba(232,192,96,.85); border-style: solid; }
+
+/* 回転量インジケーター（金色ドット） */
+.ball-indicator { position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity .3s; }
+.ball-indicator::before {
+  content: ''; position: absolute;
+  top: 13px; left: calc(50% - 7px); width: 14px; height: 14px;
+  background: var(--gold); border-radius: 50%;
+  box-shadow: 0 0 16px rgba(232,192,96,1), 0 0 6px var(--gold), 0 0 28px rgba(232,192,96,.5);
+}
+.ball-indicator::after {
+  content: ''; position: absolute;
+  top: 27px; left: calc(50% - 2px); width: 4px; height: calc(50% - 32px);
+  background: linear-gradient(to bottom, rgba(232,192,96,.7), transparent);
+  border-radius: 2px; transform-origin: top center;
+}
+
+/* 累積回転数 */
+.rot-counter {
+  position: absolute; bottom: -32px; width: 100%; text-align: center;
+  font-size: .7rem; color: var(--gold); min-height: 20px;
+  text-shadow: 0 0 10px rgba(232,192,96,.7);
+}
+
+/* 状態ガイドテキスト（orb-win flex column 内 = wheel の下に独立配置） */
+.state-guide {
+  flex-shrink: 0;
+  margin-top: 36px;   /* rot-counter(-32px) + gap(4px) 分だけ空ける */
+  padding: 0 6px 6px;
+  font-size: .76rem; color: var(--text2);
+  text-align: center; min-height: 38px;
+  line-height: 1.6;
+}
+
+/* ============================================================
+   下段: MESSAGE LOG + HOW TO PLAY（flex-shrink: 0）
+   ============================================================ */
+.bottom-row {
+  flex-shrink: 0;
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  margin-top: 6px;
+}
+.bottom-row .rpg-win { flex: 1; min-width: 0; margin-bottom: 0; }
+
+.info-box {
+  font-size: .66rem; color: var(--dim); line-height: 1.6;
+  display: flex; flex-wrap: wrap; gap: 0 1em; align-items: baseline;
+}
+.info-box a { color: var(--text2); }
+.info-box strong { color: var(--gold); }
+
+/* ============================================================
+   GET 演出オーバーレイ
+   ============================================================ */
+#getOverlay {
+  display: none; position: fixed; inset: 0; z-index: 300;
+  align-items: center; justify-content: center; flex-direction: column;
+  background: rgba(0,0,0,.7); backdrop-filter: blur(4px);
+}
+#getOverlay.show { display: flex; }
+.get-overlay-win {
+  background: var(--win);
+  border: 3px solid var(--gold);
+  box-shadow: 0 0 0 2px var(--win), 0 0 0 4px var(--gold2), 10px 10px 0 rgba(0,0,0,.9);
+  padding: 28px 36px; text-align: center;
+  animation: winDrop .4s cubic-bezier(.22,1,.36,1) .1s both;
+}
+@keyframes winDrop  { from{transform:translateY(-80px) scale(.8);opacity:0} to{transform:none;opacity:1} }
+.get-capsule { font-size: 4.5rem; animation: capBounce .5s cubic-bezier(.22,1,.36,1) .3s both; }
+@keyframes capBounce { from{transform:scale(.2);opacity:0} to{transform:scale(1);opacity:1} }
+.get-title {
+  font-size: 1.4rem; color: var(--gold); margin-top: 10px;
+  text-shadow: 3px 3px 0 var(--gold3), 0 0 22px rgba(232,192,96,.9);
+  animation: fadeUp .35s .65s both;
+}
+.get-sub { font-size: .75rem; color: var(--text); margin-top: 8px; animation: fadeUp .35s .85s both; }
+@keyframes fadeUp { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:none} }
+</style>
+</head>
+<body>
+
+<canvas id="starCanvas"></canvas>
+<canvas id="fxCanvas"></canvas>
+
+<!-- GET 演出 -->
+<div id="getOverlay">
+  <div class="get-overlay-win">
+    <div class="get-capsule">🎊</div>
+    <div class="get-title">ITEM　GET !!</div>
+    <div class="get-sub">ガチャカプセルを　手に入れた！</div>
+  </div>
+</div>
+
+<div class="container">
+
+  <!-- タイトル -->
+  <div class="game-title">
+    <h1>✨ 魔法のバリフリガチャ ✨</h1>
+    <div class="sub">MAGIC BARRIER FREE GACHA</div>
+  </div>
+
+  <!-- 上段: GACHA STATUS + COMMAND -->
+  <div class="top-row">
+    <div class="rpg-win">
+      <div class="rpg-win-hdr">GACHA STATUS</div>
+      <div id="statusText">未接続</div>
+      <button id="connectBtn" class="rpg-btn rpg-btn-primary" onclick="connectDevice()">▶ BLE 接続</button>
+    </div>
+
+    <div class="rpg-win" id="commandWin" style="opacity:.35;pointer-events:none;">
+      <div class="rpg-win-hdr">COMMAND</div>
+      <div class="cmd-col">
+        <button class="rpg-btn"        onclick="sendCmd('#BFGCUNLOCK!')">▶ ふっかつ(解除)</button>
+        <button class="rpg-btn danger" onclick="sendCmd('#BFGCLCK!')"  >▶ ふういん</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 中段: MAGIC ORB（残り高さをすべて占有） -->
+  <div id="controls" style="opacity:.35;pointer-events:none;">
+    <div class="rpg-win orb-win">
+      <div class="rpg-win-hdr">MAGIC ORB</div>
+
+      <!-- gacha-area: container-type:size で wheel-wrap にサイズを提供 -->
+      <div class="gacha-area">
+        <div class="wheel-wrap" id="wheelWrap">
+          <svg class="progress-svg" viewBox="0 0 306 306">
+            <circle cx="153" cy="153" r="148" fill="none" stroke="rgba(255,255,255,.05)" stroke-width="5"/>
+            <circle id="progressArc" cx="153" cy="153" r="148" fill="none"
+                    stroke="#e8c060" stroke-width="5" stroke-linecap="round"
+                    stroke-dasharray="0 930" transform="rotate(-90 153 153)"/>
+          </svg>
+          <div class="gacha-ball s-disconnect" id="gachaBall">
+            <div class="ball-inner">
+              <span class="ball-icon"  id="ballIcon">🔮</span>
+              <div  class="ball-label" id="ballLabel">OFFLINE</div>
+              <div  class="ball-hint"  id="ballHint"></div>
+            </div>
+          </div>
+          <div class="drag-ring"      id="dragRing"></div>
+          <div class="ball-indicator" id="ballIndicator"></div>
+          <div class="rot-counter"    id="rotCounter"></div>
+        </div>
+      </div>
+
+      <!-- state-guide は gacha-area の外（orb-win の flex 子要素として下段に固定） -->
+      <div class="state-guide" id="stateGuide">▼ BLE で接続してください</div>
+    </div>
+  </div>
+
+  <!-- 下段: HOW TO PLAY（全幅） -->
+  <div class="bottom-row">
+    <div class="rpg-win">
+      <div class="rpg-win-hdr">HOW TO PLAY</div>
+      <div class="info-box">
+        <strong>操作：</strong>ふっかつ(解除)後、球を<strong>時計回りにドラッグ</strong>。
+        <strong>iOS：</strong><a href="https://apps.apple.com/app/bluefy-web-ble-browser/id1492912960" target="_blank">Bluefy</a> をお使いください。
+        <strong>Android/PC：</strong>Chrome で動作。
+        <a href="https://protopedia.net/prototype/4728" target="_blank">魔法のバリフリガチャ</a>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /container -->
+
+<script>
+/* ============================================================
+   BLE 定数
+   ============================================================ */
+const SVC_UUID   = 'a6b00040-bafe-4b52-8e2d-9b1c3d4e5f60';
+const CMD_UUID   = 'a6b00041-bafe-4b52-8e2d-9b1c3d4e5f60';
+const STATE_UUID = 'a6b00042-bafe-4b52-8e2d-9b1c3d4e5f60';
+
+let bleDevice = null;
+let cmdChar   = null;
+
+/* ============================================================
+   BLE 接続
+   ============================================================ */
+async function connectDevice() {
+  try {
+    log('デバイスを検索中...');
+    bleDevice = await navigator.bluetooth.requestDevice({
+      filters: [{ namePrefix: 'BariGacha-BLE-' }],
+      optionalServices: [SVC_UUID]
+    });
+    bleDevice.addEventListener('gattserverdisconnected', onDisconnect);
+
+    log('接続中...');
+    const server    = await bleDevice.gatt.connect();
+    const service   = await server.getPrimaryService(SVC_UUID);
+    cmdChar         = await service.getCharacteristic(CMD_UUID);
+    const stateChar = await service.getCharacteristic(STATE_UUID);
+
+    await stateChar.startNotifications();
+    stateChar.addEventListener('characteristicvaluechanged', onStateNotify);
+
+    setConnected(true);
+    log('接続成功: ' + bleDevice.name);
+  } catch (e) {
+    log('エラー: ' + e.message);
+  }
+}
+
+function onDisconnect() {
+  cmdChar = null;
+  setConnected(false);
+  log('切断されました');
+}
+
+function setConnected(ok) {
+  const st  = document.getElementById('statusText');
+  const ctl = document.getElementById('controls');
+  const cmd = document.getElementById('commandWin');
+  const enable  = el => { el.style.opacity = '1';    el.style.pointerEvents = 'auto'; };
+  const disable = el => { el.style.opacity = '0.35'; el.style.pointerEvents = 'none'; };
+  if (ok) {
+    st.textContent = '接続中: ' + (bleDevice ? bleDevice.name : '');
+    st.className   = 'connected';
+    enable(ctl); enable(cmd);
+    setGachaState(1);
+  } else {
+    st.textContent = '未接続';
+    st.className   = '';
+    disable(ctl); disable(cmd);
+    setGachaState(0);
+  }
+}
+
+/* ============================================================
+   コマンド送信
+   ============================================================ */
+async function sendCmd(cmd) {
+  if (!cmdChar) return;
+  try {
+    await cmdChar.writeValueWithoutResponse(new TextEncoder().encode(cmd));
+    log('送信: ' + cmd);
+  } catch (e) {
+    log('送信エラー: ' + e.message);
+  }
+}
+
+/* ============================================================
+   状態通知受信
+   ============================================================ */
+function onStateNotify(evt) {
+  const s = new TextDecoder().decode(evt.target.value);
+  log('受信: ' + s);
+  if      (s === '#BFGSLOCK!')    setGachaState(1);
+  else if (s === '#BFGSUNLOCK!')  setGachaState(2);
+  else if (s === '#BFGSPREMOVE!') setGachaState(3);
+  else if (s === '#BFGSMOVE!')    setGachaState(4);
+  else if (s === '#BFGSGET!')     setGachaState(5);
+}
+
+/* ============================================================
+   ガチャ UI 状態管理
+   ============================================================ */
+const STATES = {
+  0: { cls:'s-disconnect', spin:'',          icon:'🔮', label:'OFFLINE', hint:'',                        guide:'▼ BLE で接続してください',            arc:'rgba(80,80,180,.3)' },
+  1: { cls:'s-lock',       spin:'',          icon:'🔒', label:'SEALED',  hint:'▶ ふっかつ(解除)をえらべ', guide:'[ 封印中 ]　解除コマンドを使うのだ！', arc:'#992020' },
+  2: { cls:'s-unlock',     spin:'',          icon:'⚔️', label:'READY!',  hint:'時計回りに回せ！',         guide:'[ 待機中 ]　球を時計回りに回すのだ！', arc:'#2060cc' },
+  3: { cls:'s-premove',    spin:'spin-slow', icon:'🔮', label:'MOVE!!',  hint:'',                        guide:'[ 魔法発動中！ ]　ガチャ回転中！',     arc:'#c08010' },
+  4: { cls:'s-premove',    spin:'spin-slow', icon:'🔮', label:'MOVE!!',  hint:'',                        guide:'[ 魔法発動中！ ]　ガチャ回転中！',     arc:'#c08010' },
+  5: { cls:'s-get',        spin:'',          icon:'🎊', label:'GET!!',   hint:'',                        guide:'[ 獲得！ ]　カプセルを手に入れた！',   arc:'#e8c020' },
+};
+
+let curState = -1;
+function setGachaState(s) {
+  if (s === curState) return;
+  curState = s;
+  const cfg   = STATES[s] || STATES[0];
+  const ball  = document.getElementById('gachaBall');
+  const icon  = document.getElementById('ballIcon');
+  const label = document.getElementById('ballLabel');
+  const hint  = document.getElementById('ballHint');
+  const guide = document.getElementById('stateGuide');
+
+  ball.className    = 'gacha-ball ' + cfg.cls + (cfg.spin ? ' ' + cfg.spin : '');
+  icon.textContent  = cfg.icon;
+  label.textContent = cfg.label;
+  hint.textContent  = cfg.hint;
+  guide.textContent = cfg.guide;
+  arcEl.setAttribute('stroke', cfg.arc);
+
+  // LOCK受信時: 積算角度をリセット
+  if (s === 1) {
+    cumAngle = 0; dragMode = 0;
+    arcEl.setAttribute('stroke-dasharray', '0 ' + ARC_C);
+    indicatorEl.style.transform = 'rotate(0deg)';
+  }
+  indicatorEl.style.opacity = (s >= 2 && s <= 4) ? '1' : '0';
+
+  if (s === 5) triggerGetEffect();
+  if (s === 3 || s === 4) spawnSparks();
+}
+
+/* ============================================================
+   ドラッグ操作
+   ============================================================ */
+const wheelWrap   = document.getElementById('wheelWrap');
+const arcEl       = document.getElementById('progressArc');
+const dragRingEl  = document.getElementById('dragRing');
+const rotCountEl  = document.getElementById('rotCounter');
+const indicatorEl = document.getElementById('ballIndicator');
+
+const ARC_R = 148;
+const ARC_C = 2 * Math.PI * ARC_R;
+
+let dragging  = false;
+let lastAngle = 0;
+let cumAngle  = 0;
+let dragMode  = 0;
+
+function ptAngle(cx, cy, x, y) { return Math.atan2(y - cy, x - cx) * 180 / Math.PI; }
+function center() {
+  const r = wheelWrap.getBoundingClientRect();
+  return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+}
+
+function dragStart(x, y) {
+  if (curState < 2) return;
+  dragging  = true;
+  const c   = center();
+  lastAngle = ptAngle(c.x, c.y, x, y);
+  dragRingEl.classList.add('active');
+  const initMode = cumAngle >= 720 ? 2 : (cumAngle > 5 ? 1 : 0);
+  if (initMode !== dragMode) {
+    dragMode = initMode;
+    if (initMode === 1) sendCmd('#BFGCPRE!');
+    else if (initMode === 2) sendCmd('#BFGCMOVE!');
+  }
+  indicatorEl.style.transform = 'rotate(' + cumAngle + 'deg)';
+  if (cumAngle > 0) {
+    const shown = Math.min(cumAngle, 720);
+    arcEl.setAttribute('stroke-dasharray', (ARC_C * shown / 360).toFixed(1) + ' ' + ARC_C);
+    const t = Math.min(cumAngle / 720, 1);
+    arcEl.setAttribute('stroke', `hsl(${50 - t * 30},100%,55%)`);
+  }
+}
+
+function dragMove(x, y) {
+  if (!dragging) return;
+  const c     = center();
+  const angle = ptAngle(c.x, c.y, x, y);
+  let delta   = angle - lastAngle;
+  if (delta >  180) delta -= 360;
+  if (delta < -180) delta += 360;
+  if (delta > 0) cumAngle += delta;
+  lastAngle = angle;
+
+  indicatorEl.style.transform = 'rotate(' + cumAngle + 'deg)';
+
+  const shown = Math.min(cumAngle, 720);
+  arcEl.setAttribute('stroke-dasharray', (ARC_C * shown / 360).toFixed(1) + ' ' + ARC_C);
+  const t = Math.min(cumAngle / 720, 1);
+  arcEl.setAttribute('stroke', `hsl(${50 - t * 30},100%,55%)`);
+
+  const rot = cumAngle / 360;
+  rotCountEl.textContent = rot > 0 ? rot.toFixed(1) + ' 周' : '';
+
+  const newMode = cumAngle >= 720 ? 2 : (cumAngle > 5 ? 1 : 0);
+  if (newMode !== dragMode) {
+    dragMode = newMode;
+    if (newMode === 1) sendCmd('#BFGCPRE!');
+    else if (newMode === 2) sendCmd('#BFGCMOVE!');
+    else sendCmd('#BFGCSTOP!');
+  }
+}
+
+function dragEnd() {
+  if (!dragging) return;
+  dragging = false;
+  dragRingEl.classList.remove('active');
+  rotCountEl.textContent = '';
+  if (dragMode > 0) { sendCmd('#BFGCSTOP!'); dragMode = 0; }
+}
+
+document.addEventListener('mousedown',  e => { if (e.target.closest('button')) return; e.preventDefault(); dragStart(e.clientX, e.clientY); });
+window.addEventListener('mousemove',    e => dragMove(e.clientX, e.clientY));
+window.addEventListener('mouseup',      () => dragEnd());
+document.addEventListener('touchstart', e => { if (e.target.closest('button')) return; e.preventDefault(); dragStart(e.touches[0].clientX, e.touches[0].clientY); }, { passive: false });
+window.addEventListener('touchmove',    e => { if (dragging) { e.preventDefault(); dragMove(e.touches[0].clientX, e.touches[0].clientY); } }, { passive: false });
+window.addEventListener('touchend',     () => dragEnd());
+
+/* ============================================================
+   パーティクルエフェクト
+   ============================================================ */
+const fxCanvas = document.getElementById('fxCanvas');
+const fxCtx    = fxCanvas.getContext('2d');
+let   particles = [];
+let   rafId     = null;
+
+function resizeFx() { fxCanvas.width = window.innerWidth; fxCanvas.height = window.innerHeight; }
+window.addEventListener('resize', resizeFx);
+resizeFx();
+
+class Particle {
+  constructor(x, y, type) {
+    this.type = type; this.x = x; this.y = y;
+    if (type === 'confetti') {
+      this.vx = (Math.random()-.5)*14; this.vy = Math.random()*-18-4; this.g = .5;
+      this.w = Math.random()*10+5; this.h = Math.random()*6+3;
+      this.rot = Math.random()*360; this.rv = (Math.random()-.5)*12;
+      this.color = `hsl(${Math.random()*360},90%,60%)`; this.life = 1;
+    } else {
+      const a = Math.random()*Math.PI*2, sp = Math.random()*5+2;
+      this.vx = Math.cos(a)*sp; this.vy = Math.sin(a)*sp; this.g = 0;
+      this.r = Math.random()*5+2; this.color = `hsl(${40+Math.random()*50},100%,65%)`; this.life = 1;
+    }
+  }
+  update() {
+    this.x += this.vx; this.y += this.vy; this.vy += this.g;
+    this.life -= this.type === 'confetti' ? .006 : .028;
+    if (this.type === 'confetti') this.rot += this.rv;
+  }
+  draw(ctx) {
+    ctx.save(); ctx.globalAlpha = Math.max(0, this.life);
+    if (this.type === 'confetti') {
+      ctx.translate(this.x, this.y); ctx.rotate(this.rot*Math.PI/180);
+      ctx.fillStyle = this.color; ctx.fillRect(-this.w/2, -this.h/2, this.w, this.h);
+    } else {
+      ctx.fillStyle = this.color; ctx.beginPath();
+      ctx.arc(this.x, this.y, this.r, 0, Math.PI*2); ctx.fill();
+    }
+    ctx.restore();
+  }
+}
+
+function spawnConfetti() {
+  const cx = window.innerWidth/2, cy = window.innerHeight*.35;
+  for (let i = 0; i < 130; i++) particles.push(new Particle(cx, cy, 'confetti'));
+  startFx();
+}
+function spawnSparks() {
+  const cx = window.innerWidth/2, cy = window.innerHeight/2;
+  for (let i = 0; i < 25; i++) particles.push(new Particle(cx, cy, 'spark'));
+  startFx();
+}
+function startFx() { if (!rafId) rafLoop(); }
+function rafLoop() {
+  fxCtx.clearRect(0, 0, fxCanvas.width, fxCanvas.height);
+  particles = particles.filter(p => p.life > 0);
+  particles.forEach(p => { p.update(); p.draw(fxCtx); });
+  rafId = particles.length > 0 ? requestAnimationFrame(rafLoop) : null;
+}
+
+/* ============================================================
+   GET 演出
+   ============================================================ */
+function triggerGetEffect() {
+  const ov = document.getElementById('getOverlay');
+  ov.classList.add('show');
+  spawnConfetti();
+  setTimeout(() => ov.classList.remove('show'), 3200);
+}
+
+/* ============================================================
+   星空（RPG 夜空風）
+   ============================================================ */
+const starCanvas = document.getElementById('starCanvas');
+const starCtx    = starCanvas.getContext('2d');
+let stars = [];
+
+function initStars() {
+  starCanvas.width = window.innerWidth; starCanvas.height = window.innerHeight;
+  stars = Array.from({ length: 160 }, () => ({
+    x: Math.random()*starCanvas.width, y: Math.random()*starCanvas.height,
+    r: Math.random()<.15 ? Math.random()*1.8+1 : Math.random()*.9+.3,
+    a: Math.random(), da: (Math.random()*.005+.001)*(Math.random()<.5?1:-1),
+  }));
+  drawStars();
+}
+function drawStars() {
+  starCtx.clearRect(0, 0, starCanvas.width, starCanvas.height);
+  const grad = starCtx.createLinearGradient(0, 0, 0, starCanvas.height);
+  grad.addColorStop(0, '#050510'); grad.addColorStop(.5, '#080820'); grad.addColorStop(1, '#050518');
+  starCtx.fillStyle = grad; starCtx.fillRect(0, 0, starCanvas.width, starCanvas.height);
+  stars.forEach(s => {
+    s.a += s.da; if (s.a>1||s.a<0) s.da *= -1;
+    starCtx.beginPath(); starCtx.arc(s.x, s.y, s.r, 0, Math.PI*2);
+    starCtx.fillStyle = s.r>1 ? `rgba(200,210,255,${s.a.toFixed(2)})` : `rgba(255,255,255,${s.a.toFixed(2)})`;
+    starCtx.fill();
+  });
+  requestAnimationFrame(drawStars);
+}
+window.addEventListener('resize', initStars);
+initStars();
+
+/* ============================================================
+   ログ（コンソールのみ）
+   ============================================================ */
+function log(msg) {
+  console.log('[BariGacha]', msg);
+}
+</script>
+</body>
+</html>
