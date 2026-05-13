@@ -781,17 +781,19 @@ function onHandResults(res) {
       if (cwMaintainTimer) clearTimeout(cwMaintainTimer);
       cwMaintainTimer = setTimeout(resetGestureState, 1000);
 
-      /* cumAngle 積算＋ビジュアル更新 */
-      cumAngle += delta;
-      updateRotationVisuals();
-
       /* 1秒以上 CW 継続で起動 */
       if (!gestureOn && (now - cwActivationStart) >= 1000) {
         gestureOn = true;
         dragRingEl.classList.add('active');
       }
 
-      if (gestureOn) updateMode();
+      /* 起動後のみ積算・ビジュアル・コマンド送信
+         起動前は積算しないことで PRE(5°〜) → MOVE(720°〜) の順を保証 */
+      if (gestureOn) {
+        cumAngle += delta;
+        updateRotationVisuals();
+        updateMode();
+      }
     }
   }
   prevTipAngle = tip;
