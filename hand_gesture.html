@@ -656,10 +656,10 @@ function dragEnd() {
   if (dragMode > 0 && !gestureOn) { sendCmd('#BFGCSTOP!'); dragMode = 0; }
 }
 
-document.addEventListener('mousedown',  e => { if (e.target.closest('button')) return; e.preventDefault(); dragStart(e.clientX, e.clientY); });
+document.addEventListener('mousedown',  e => { if (e.target.closest('button,a')) return; e.preventDefault(); dragStart(e.clientX, e.clientY); });
 window.addEventListener('mousemove',    e => dragMove(e.clientX, e.clientY));
 window.addEventListener('mouseup',      () => dragEnd());
-document.addEventListener('touchstart', e => { if (e.target.closest('button')) return; e.preventDefault(); dragStart(e.touches[0].clientX, e.touches[0].clientY); }, { passive: false });
+document.addEventListener('touchstart', e => { if (e.target.closest('button,a')) return; e.preventDefault(); dragStart(e.touches[0].clientX, e.touches[0].clientY); }, { passive: false });
 window.addEventListener('touchmove',    e => { if (dragging) { e.preventDefault(); dragMove(e.touches[0].clientX, e.touches[0].clientY); } }, { passive: false });
 window.addEventListener('touchend',     () => dragEnd());
 
