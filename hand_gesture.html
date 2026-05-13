@@ -737,6 +737,17 @@ function resetGestureState() {
   }
 }
 
+function isOpenHand(lms) {
+  const w = lms[0];
+  function d2(a, b) { const dx = a.x-b.x, dy = a.y-b.y; return dx*dx + dy*dy; }
+  const fingers = [[8,5],[12,9],[16,13],[20,17]]; // [tip, mcp] × 4本指
+  let extended = 0;
+  for (const [tip, mcp] of fingers) {
+    if (d2(lms[tip], w) > d2(lms[mcp], w)) extended++;
+  }
+  return extended >= 3;
+}
+
 function onHandResults(res) {
   const pip    = document.getElementById('pipCanvas');
   const vid    = document.getElementById('pipVideo');
@@ -764,6 +775,9 @@ function onHandResults(res) {
   drawHandSkeleton(ctx, lms, pip.width, pip.height);
 
   if (curState < 2) { prevTipAngle = null; return; }
+
+  /* パー判定: 4本指のうち3本以上、先端が手首よりMCP関節より遠ければ伸びている */
+  if (!isOpenHand(lms)) { prevTipAngle = null; return; }
 
   /* 人差し指先端(8)の画面中心からの角度。x 反転でミラー補正。
      画面中心基準なので手全体の円運動を正しく360°積算できる */
